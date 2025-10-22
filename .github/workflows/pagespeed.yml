@@ -41,6 +41,7 @@ jobs:
           # Předání všech tří secretů do prostředí skriptu
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
           BIGQUERY_TABLE_ID: ${{ secrets.BIGQUERY_TABLE_ID }}
+          POCET_URL_K_TESTOVANI: ${{ vars.POCET_URL_K_TESTOVANI }}
           # Následující řádek je technicky potřeba pro BQ klienta,
           # ale 'google-github-actions/auth' ho nastaví automaticky.
           # Pro jistotu ho můžeme nastavit explicitně z výstupu kroku 'auth':

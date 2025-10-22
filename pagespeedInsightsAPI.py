@@ -9,9 +9,10 @@ from google.cloud import bigquery
 # --- KONFIGURACE ---
 API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
+# Načteme z environment, pokud není nastaven, použije se 3 jako default
+POCET_URL_K_TESTOVANI = int(os.environ.get('POCET_URL_K_TESTOVANI', '3'))
 
-SITEMAP_URL = 'https://www.collectorboy.cz/sitemap.xml'  # ← Správná URL
-POCET_URL_K_TESTOVANI = 3
+SITEMAP_URL = 'https://www.collectorboy.cz/sitemap.xml'
 # ---------------------
 
 HEADERS = {
@@ -108,6 +109,8 @@ def main():
         sys.exit("❌ CHYBA: Secret 'PAGESPEED_API_KEY' nebyl nalezen.")
     if not BIGQUERY_TABLE_ID:
         sys.exit("❌ CHYBA: Secret 'BIGQUERY_TABLE_ID' nebyl nalezen.")
+    
+    print(f"⚙️ Konfigurace: POCET_URL_K_TESTOVANI = {POCET_URL_K_TESTOVANI}")
         
     bq_client = bigquery.Client()
 
@@ -115,12 +118,19 @@ def main():
     if not urls_from_sitemap:
         sys.exit("--- Testování ukončeno kvůli chybě sitemapy ---") 
 
-    urls_to_test = urls_from_sitemap[:POCET_URL_K_TESTOVANI]
+    # Pokud je POCET_URL_K_TESTOVANI = 0, testujeme všechny URL
+    if POCET_URL_K_TESTOVANI == 0:
+        urls_to_test = urls_from_sitemap
+        print(f"ℹ️ Nastaveno testování VŠECH URL ({len(urls_to_test)} URL)")
+    else:
+        urls_to_test = urls_from_sitemap[:POCET_URL_K_TESTOVANI]
+        print(f"ℹ️ Bude testováno prvních {len(urls_to_test)} URL")
+    
     strategies_to_test = ['MOBILE', 'DESKTOP']
     
     all_results_to_insert = []
     
-    print(f"\n--- Bude testováno prvních {len(urls_to_test)} URL ze sitemapy ---")
+    print(f"\n--- Zahajuji testování {len(urls_to_test)} URL ---")
     
     total_calls = len(urls_to_test) * len(strategies_to_test)
     current_call = 0

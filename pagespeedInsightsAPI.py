@@ -15,11 +15,19 @@ SITEMAP_URL = 'http://collectorboy.cz/sitemap.xml'
 POCET_URL_K_TESTOVANI = 3
 # ---------------------
 
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'cs-CZ,cs;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+}
+
 def fetch_sitemap_urls(sitemap_url):
     """Načte sitemapu a vrátí seznam URL."""
     print(f"📡 Načítám sitemapu z: {sitemap_url}")
     try:
-        response = requests.get(sitemap_url, timeout=30)
+        response = requests.get(sitemap_url, headers=HEADERS, timeout=30)
         response.raise_for_status()
         namespaces = {'s': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
         root = ET.fromstring(response.content)

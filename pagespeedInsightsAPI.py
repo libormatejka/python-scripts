@@ -4,36 +4,79 @@ import os
 import sys
 from datetime import datetime
 from google.cloud import bigquery
+import gspread
+from google.oauth2 import service_account
 
 # --- KONFIGURACE ---
 API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
-URLS_TO_TEST = os.environ.get('URLS_TO_TEST', '')  # Seznam URL oddělený novými řádky
+SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')  # ID spreadsheetu
+SHEET_NAME = os.environ.get('SHEET_NAME', 'Sheet1')  # Název listu, default 'Sheet1'
 # ---------------------
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 }
 
-def parse_urls_from_config(urls_string):
-    """Načte URL ze stringu odděleného novými řádky."""
-    if not urls_string or not urls_string.strip():
-        print("❌ Chyba: Seznam URL je prázdný.")
+def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
+    """Načte URL a Category z Google Spreadsheet."""
+    print(f"📊 Načítám data z Google Spreadsheet...")
+    print(f"   Spreadsheet ID: {spreadsheet_id}")
+    print(f"   List: {sheet_name}")
+    
+    try:
+        # Použijeme stejné credentials jako pro BigQuery
+        credentials = service_account.Credentials.from_service_account_file(
+            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'),
+            scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+        )
+        
+        gc = gspread.authorize(credentials)
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+        worksheet = spreadsheet.worksheet(sheet_name)
+        
+        # Načteme všechna data
+        all_records = worksheet.get_all_records()
+        
+        if not all_records:
+            print("❌ Chyba: Spreadsheet neobsahuje žádná data.")
+            return None
+        
+        # Vytvoříme seznam URL s jejich kategoriemi
+        url_data = []
+        for i, record in enumerate(all_records, 1):
+            url = record.get('URL', '').strip()
+            category = record.get('Category', '').strip()
+            
+            if url:  # Přidáme pouze řádky s URL
+                url_data.append({
+                    'url': url,
+                    'category': category if category else 'Uncategorized'
+                })
+        
+        if not url_data:
+            print("❌ Chyba: Ve spreadsheetu nebyly nalezeny žádné platné URL.")
+            return None
+        
+        print(f"✅ Načteno {len(url_data)} URL z spreadsheetu.")
+        print(f"\n📋 První 3 URL k testování:")
+        for i, data in enumerate(url_data[:3], 1):
+            print(f"   {i}. {data['url']} (Kategorie: {data['category']})")
+        
+        return url_data
+        
+    except gspread.exceptions.SpreadsheetNotFound:
+        print(f"❌ Chyba: Spreadsheet s ID '{spreadsheet_id}' nebyl nalezen.")
+        print("   Zkontroluj, zda je spreadsheet sdílený se service accountem.")
         return None
-    
-    # Rozdělíme podle nových řádků a odstraníme prázdné řádky a mezery
-    urls = [url.strip() for url in urls_string.strip().split('\n') if url.strip()]
-    
-    if not urls:
-        print("❌ Chyba: Nepodařilo se načíst žádné platné URL.")
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"❌ Chyba: List '{sheet_name}' nebyl ve spreadsheetu nalezen.")
         return None
-    
-    print(f"✅ Načteno {len(urls)} URL z konfigurace.")
-    print(f"\n📋 Seznam URL k testování:")
-    for i, url in enumerate(urls, 1):
-        print(f"   {i}. {url}")
-    
-    return urls
+    except Exception as e:
+        print(f"❌ Chyba při načítání spreadsheetu: {e}")
+        import traceback
+        print(f"🔍 Traceback: {traceback.format_exc()}")
+        return None
 
 def check_pagespeed(url_to_check, strategy):
     """Spustí PageSpeed test a vrací metriky."""
@@ -104,27 +147,30 @@ def main():
         sys.exit("❌ CHYBA: Secret 'PAGESPEED_API_KEY' nebyl nalezen.")
     if not BIGQUERY_TABLE_ID:
         sys.exit("❌ CHYBA: Secret 'BIGQUERY_TABLE_ID' nebyl nalezen.")
-    if not URLS_TO_TEST:
-        sys.exit("❌ CHYBA: Secret 'URLS_TO_TEST' nebyl nalezen nebo je prázdný.")
+    if not SPREADSHEET_ID:
+        sys.exit("❌ CHYBA: Variable 'SPREADSHEET_ID' nebyla nalezena.")
         
     bq_client = bigquery.Client()
 
-    # Načteme všechny URL z konfigurace
-    urls_to_test = parse_urls_from_config(URLS_TO_TEST)
-    if not urls_to_test:
-        sys.exit("--- Testování ukončeno kvůli chybě v konfiguraci URL ---") 
+    # Načteme URL a kategorie ze spreadsheetu
+    url_data = fetch_urls_from_spreadsheet(SPREADSHEET_ID, SHEET_NAME)
+    if not url_data:
+        sys.exit("--- Testování ukončeno kvůli chybě při načítání spreadsheetu ---") 
     
     strategies_to_test = ['MOBILE', 'DESKTOP']
     all_results_to_insert = []
     
     print(f"\n{'='*60}")
-    print(f"--- Zahajuji testování {len(urls_to_test)} URL ---")
+    print(f"--- Zahajuji testování {len(url_data)} URL ---")
     print(f"{'='*60}")
     
-    total_calls = len(urls_to_test) * len(strategies_to_test)
+    total_calls = len(url_data) * len(strategies_to_test)
     current_call = 0
 
-    for url in urls_to_test:
+    for data in url_data:
+        url = data['url']
+        category = data['category']
+        
         for strategy in strategies_to_test:
             current_call += 1
             print(f"\n[{current_call}/{total_calls}]", end=" ")
@@ -141,6 +187,7 @@ def main():
                     "DATE": now.strftime("%Y-%m-%d"),
                     "TIMESTAMP": now.isoformat() + "Z",
                     "URL": url,
+                    "CATEGORY": category,  # ← PŘIDÁNA KATEGORIE
                     "DEVICE_CATEGORY": strategy,
                     "FCP": metrics["fcp"],
                     "LCP": metrics["lcp"],

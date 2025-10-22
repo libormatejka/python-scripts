@@ -40,4 +40,4 @@ jobs:
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
         # Spustí skript (ten si sám načte URL sitemapy)
         run: |
-          python run_pagespeed_test.py
+          python pagespeedInsightsAPI.py

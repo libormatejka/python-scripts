@@ -12,7 +12,7 @@ API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
 
 SITEMAP_URL = 'http://collectorboy.cz/sitemap.xml'
-POCET_URL_K_TESTOVANI = 1
+POCET_URL_K_TESTOVANI = 3
 # ---------------------
 
 def fetch_sitemap_urls(sitemap_url):

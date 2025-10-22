@@ -11,7 +11,7 @@ API_KEY = os.environ.get('PAGESPEED_API_KEY')
 # Celá cesta k tabulce, např. "projekt.dataset.tabulka"
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
 
-SITEMAP_URL = 'http://collectorboy.cz/sitemap.xml'
+SITEMAP_URL = 'https://www.collectorboy.cz/sitemap.xml'
 POCET_URL_K_TESTOVANI = 3
 # ---------------------
 

@@ -43,7 +43,7 @@ def check_pagespeed(url_to_check, strategy):
     """
     print(f"\n⚙️  Testuji: {url_to_check} (Strategie: {strategy})")
     
-    api_endpoint = "https.googleapis.com/pagespeedonline/v5/runPagespeed"
+    api_endpoint = "https://googleapis.com/pagespeedonline/v5/runPagespeed"
     params = {
         'url': url_to_check, 
         'key': API_KEY, 

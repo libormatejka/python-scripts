@@ -1,0 +1,43 @@
+# Název workflow, který uvidíte v záložce "Actions"
+name: Spustit PageSpeed Test
+
+# Kdy se má workflow spustit
+on:
+  # 1. Ruční spuštění: Přidá tlačítko "Run workflow" v záložce Actions
+  workflow_dispatch:
+  
+  # 2. Plánované spuštění: (Příklad: každou neděli v 1:00 UTC)
+  schedule:
+    - cron: '0 1 * * 0' # Odkomentujte, pokud chcete automatické spouštění
+
+# Seznam úloh, které se mají provést
+jobs:
+  run-pagespeed-test:
+    # Použije nejnovější virtuální server od GitHubu s Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      # Krok 1: Stáhne kód z vašeho repozitáře (aby mohl spustit .py soubor)
+      - name: Checkout kódu
+        uses: actions/checkout@v4
+
+      # Krok 2: Nastaví prostředí Pythonu verze 3.10
+      - name: Nastavení Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # Krok 3: Instalace potřebných Python knihoven
+      - name: Instalace závislostí
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      # Krok 4: Spuštění našeho Python skriptu
+      - name: Spuštění PageSpeed testu
+        # Předá API klíč ze "Secrets" do skriptu
+        env:
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+        # Spustí skript (ten si sám načte URL sitemapy)
+        run: |
+          python run_pagespeed_test.py

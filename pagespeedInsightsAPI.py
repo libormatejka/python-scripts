@@ -1,6 +1,5 @@
 import requests
 import time
-import xml.etree.ElementTree as ET
 import os
 import sys
 from datetime import datetime
@@ -9,36 +8,32 @@ from google.cloud import bigquery
 # --- KONFIGURACE ---
 API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
-# Načteme z environment, pokud není nastaven, použije se 3 jako default
-POCET_URL_K_TESTOVANI = int(os.environ.get('POCET_URL_K_TESTOVANI', '3'))
-
-SITEMAP_URL = 'https://www.collectorboy.cz/sitemap.xml'
+URLS_TO_TEST = os.environ.get('URLS_TO_TEST', '')  # Seznam URL oddělený novými řádky
 # ---------------------
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 }
 
-def fetch_sitemap_urls(sitemap_url):
-    """Načte sitemapu a vrátí seznam URL."""
-    print(f"📡 Načítám sitemapu z: {sitemap_url}")
-    try:
-        response = requests.get(sitemap_url, headers=HEADERS, timeout=30)
-        response.raise_for_status()
-        namespaces = {'s': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-        root = ET.fromstring(response.content)
-        loc_elements = root.findall('s:url/s:loc', namespaces)
-        if not loc_elements:
-             loc_elements = root.findall('s:sitemap/s:loc', namespaces)
-        urls = [loc.text for loc in loc_elements]
-        if not urls:
-            print("❌ Chyba: Ve sitemapě nebyly nalezeny žádné <loc> tagy.")
-            return None
-        print(f"✅ Nalezeno {len(urls)} URL v sitemapě.")
-        return urls
-    except Exception as e:
-        print(f"❌ Chyba při zpracování sitemapy: {e}")
-    return None
+def parse_urls_from_config(urls_string):
+    """Načte URL ze stringu odděleného novými řádky."""
+    if not urls_string or not urls_string.strip():
+        print("❌ Chyba: Seznam URL je prázdný.")
+        return None
+    
+    # Rozdělíme podle nových řádků a odstraníme prázdné řádky a mezery
+    urls = [url.strip() for url in urls_string.strip().split('\n') if url.strip()]
+    
+    if not urls:
+        print("❌ Chyba: Nepodařilo se načíst žádné platné URL.")
+        return None
+    
+    print(f"✅ Načteno {len(urls)} URL z konfigurace.")
+    print(f"\n📋 Seznam URL k testování:")
+    for i, url in enumerate(urls, 1):
+        print(f"   {i}. {url}")
+    
+    return urls
 
 def check_pagespeed(url_to_check, strategy):
     """Spustí PageSpeed test a vrací metriky."""
@@ -109,28 +104,22 @@ def main():
         sys.exit("❌ CHYBA: Secret 'PAGESPEED_API_KEY' nebyl nalezen.")
     if not BIGQUERY_TABLE_ID:
         sys.exit("❌ CHYBA: Secret 'BIGQUERY_TABLE_ID' nebyl nalezen.")
-    
-    print(f"⚙️ Konfigurace: POCET_URL_K_TESTOVANI = {POCET_URL_K_TESTOVANI}")
+    if not URLS_TO_TEST:
+        sys.exit("❌ CHYBA: Secret 'URLS_TO_TEST' nebyl nalezen nebo je prázdný.")
         
     bq_client = bigquery.Client()
 
-    urls_from_sitemap = fetch_sitemap_urls(SITEMAP_URL)
-    if not urls_from_sitemap:
-        sys.exit("--- Testování ukončeno kvůli chybě sitemapy ---") 
-
-    # Pokud je POCET_URL_K_TESTOVANI = 0, testujeme všechny URL
-    if POCET_URL_K_TESTOVANI == 0:
-        urls_to_test = urls_from_sitemap
-        print(f"ℹ️ Nastaveno testování VŠECH URL ({len(urls_to_test)} URL)")
-    else:
-        urls_to_test = urls_from_sitemap[:POCET_URL_K_TESTOVANI]
-        print(f"ℹ️ Bude testováno prvních {len(urls_to_test)} URL")
+    # Načteme všechny URL z konfigurace
+    urls_to_test = parse_urls_from_config(URLS_TO_TEST)
+    if not urls_to_test:
+        sys.exit("--- Testování ukončeno kvůli chybě v konfiguraci URL ---") 
     
     strategies_to_test = ['MOBILE', 'DESKTOP']
-    
     all_results_to_insert = []
     
-    print(f"\n--- Zahajuji testování {len(urls_to_test)} URL ---")
+    print(f"\n{'='*60}")
+    print(f"--- Zahajuji testování {len(urls_to_test)} URL ---")
+    print(f"{'='*60}")
     
     total_calls = len(urls_to_test) * len(strategies_to_test)
     current_call = 0
@@ -138,6 +127,7 @@ def main():
     for url in urls_to_test:
         for strategy in strategies_to_test:
             current_call += 1
+            print(f"\n[{current_call}/{total_calls}]", end=" ")
             
             metrics = check_pagespeed(url, strategy)
             
@@ -164,6 +154,10 @@ def main():
         
         if metrics == 'STOP':
             break
+
+    print(f"\n{'='*60}")
+    print(f"📊 Celkem získáno {len(all_results_to_insert)} úspěšných měření")
+    print(f"{'='*60}")
 
     insert_to_bigquery(bq_client, all_results_to_insert)
     print("\n--- 🎉 Všechny úlohy dokončeny ---")

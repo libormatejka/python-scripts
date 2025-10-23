@@ -134,7 +134,7 @@ def test_url_multiple_times(url, strategy, pocet_opakovani=3):
         
         if metrics:
             all_measurements.append(metrics)
-            print(f"Skóre: {metrics['score']} | FCP: {metrics['fcp']:.2f}s | LCP: {metrics['lcp']:.2f}s")
+            print(f"Skóre: {metrics['score']} | FCP: {metrics['fcp']:.2f}s | LCP: {metrics['lcp']:.2f}s | CLS: {metrics['cls']:.4f}")
         else:
             print("Selhalo")
         

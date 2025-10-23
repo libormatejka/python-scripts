@@ -14,10 +14,6 @@ SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')  # ID spreadsheetu
 SHEET_NAME = os.environ.get('SHEET_NAME', 'Sheet1')  # Název listu, default 'Sheet1'
 # ---------------------
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-}
-
 def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
     """Načte URL a Category z Google Spreadsheet."""
     print(f"📊 Načítám data z Google Spreadsheet...")

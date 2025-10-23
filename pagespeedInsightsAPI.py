@@ -11,9 +11,9 @@ from statistics import median
 # --- KONFIGURACE ---
 API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
-SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')  # ID spreadsheetu
-SHEET_NAME = os.environ.get('SHEET_NAME', 'PageSpeedLabData-Config')  # Název listu, default 'PageSpeedLabData-Config'
-POCET_OPAKOVANI = 3  # Počet opakování testu pro každou URL
+SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')
+SHEET_NAME = os.environ.get('SHEET_NAME', 'Sheet1')
+POCET_OPAKOVANI = 3
 # ---------------------
 
 def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
@@ -23,7 +23,6 @@ def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
     print(f"   List: {sheet_name}")
     
     try:
-        # Použijeme stejné credentials jako pro BigQuery
         credentials = service_account.Credentials.from_service_account_file(
             os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'),
             scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
@@ -33,20 +32,18 @@ def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
         spreadsheet = gc.open_by_key(spreadsheet_id)
         worksheet = spreadsheet.worksheet(sheet_name)
         
-        # Načteme všechna data
         all_records = worksheet.get_all_records()
         
         if not all_records:
             print("❌ Chyba: Spreadsheet neobsahuje žádná data.")
             return None
         
-        # Vytvoříme seznam URL s jejich kategoriemi
         url_data = []
         for i, record in enumerate(all_records, 1):
             url = record.get('URL', '').strip()
             category = record.get('Category', '').strip()
             
-            if url:  # Přidáme pouze řádky s URL
+            if url:
                 url_data.append({
                     'url': url,
                     'category': category if category else 'Uncategorized'
@@ -137,20 +134,17 @@ def test_url_multiple_times(url, strategy, pocet_opakovani=3):
         
         if metrics:
             all_measurements.append(metrics)
-            print(f"Skóre: {metrics['score']} | FCP: {metrics['fcp']:.2f}s | LCP: {metrics['lcp']:.2f}s | CLS: {metrics['cls']:.4f}")
+            print(f"Skóre: {metrics['score']} | FCP: {metrics['fcp']:.2f}s | LCP: {metrics['lcp']:.2f}s")
         else:
             print("Selhalo")
         
-        # Pauza mezi opakováními (kromě posledního)
         if i < pocet_opakovani - 1:
             time.sleep(0.5)
     
-    # Pokud nemáme žádná úspěšná měření
     if not all_measurements:
         print("   ❌ Všechna měření selhala")
         return None
     
-    # Vypočítáme medián z každé metriky
     fcp_values = [m['fcp'] for m in all_measurements]
     lcp_values = [m['lcp'] for m in all_measurements]
     cls_values = [m['cls'] for m in all_measurements]
@@ -173,21 +167,18 @@ def test_url_multiple_times(url, strategy, pocet_opakovani=3):
 def insert_to_bigquery(client, rows_to_insert):
     """Vloží připravené řádky do BigQuery."""
     if not rows_to_insert:
-        print("ℹ️ Nebyla nalezena žádná data k vložení do BigQuery.")
         return
 
-    print(f"\n☁️ Vkládám {len(rows_to_insert)} řádků do BigQuery tabulky: {BIGQUERY_TABLE_ID}")
-    
     try:
         errors = client.insert_rows_json(BIGQUERY_TABLE_ID, rows_to_insert)
         if not errors:
-            print("✅ Data úspěšně vložena do BigQuery.")
+            print(f"   ☁️ ✅ Uloženo do BigQuery ({len(rows_to_insert)} řádků)")
         else:
-            print("❌ Chyba při vkládání dat do BigQuery:")
+            print("   ❌ Chyba při vkládání dat do BigQuery:")
             for error in errors:
-                print(error)
+                print(f"      {error}")
     except Exception as e:
-        print(f"❌ Závažná chyba při komunikaci s BigQuery API: {e}")
+        print(f"   ❌ Chyba při komunikaci s BigQuery: {e}")
 
 def main():
     if not API_KEY:
@@ -199,21 +190,21 @@ def main():
         
     bq_client = bigquery.Client()
 
-    # Načteme URL a kategorie ze spreadsheetu
     url_data = fetch_urls_from_spreadsheet(SPREADSHEET_ID, SHEET_NAME)
     if not url_data:
         sys.exit("--- Testování ukončeno kvůli chybě při načítání spreadsheetu ---") 
     
     strategies_to_test = ['MOBILE', 'DESKTOP']
-    all_results_to_insert = []
     
     print(f"\n{'='*60}")
     print(f"--- Zahajuji testování {len(url_data)} URL ---")
     print(f"--- Každá URL bude testována {POCET_OPAKOVANI}x pro každou strategii ---")
+    print(f"--- Výsledky budou průběžně ukládány do BigQuery ---")
     print(f"{'='*60}")
     
     total_tests = len(url_data) * len(strategies_to_test)
     current_test = 0
+    total_saved = 0
 
     for data in url_data:
         url = data['url']
@@ -225,7 +216,6 @@ def main():
             print(f"[Test {current_test}/{total_tests}] URL: {url[:50]}... | Kategorie: {category}")
             print(f"{'='*60}")
             
-            # Otestujeme URL 3x a získáme medián
             median_metrics = test_url_multiple_times(url, strategy, POCET_OPAKOVANI)
             
             if median_metrics == 'STOP':
@@ -245,9 +235,11 @@ def main():
                     "CLS": median_metrics["cls"],
                     "OVERALL_SCORE": median_metrics["score"]
                 }
-                all_results_to_insert.append(row)
+                
+                # OKAMŽITĚ uložíme do BigQuery
+                insert_to_bigquery(bq_client, [row])
+                total_saved += 1
             
-            # Pauza mezi testy různých URL/strategií
             if current_test < total_tests:
                 time.sleep(1)
         
@@ -255,10 +247,8 @@ def main():
             break
 
     print(f"\n{'='*60}")
-    print(f"📊 Celkem získáno {len(all_results_to_insert)} úspěšných měření (mediánů)")
+    print(f"📊 Celkem uloženo {total_saved} úspěšných měření do BigQuery")
     print(f"{'='*60}")
-
-    insert_to_bigquery(bq_client, all_results_to_insert)
     print("\n--- 🎉 Všechny úlohy dokončeny ---")
 
 if __name__ == "__main__":

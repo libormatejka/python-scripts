@@ -4,7 +4,7 @@ name: Spustit PageSpeed Test a uložit do BigQuery
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 * * 0' # Každou neděli v 1:00 UTC
+    - cron: '0 3 * * *'  # Každý den v 3:00 ráno UTC
 
 jobs:
   run-pagespeed-test:

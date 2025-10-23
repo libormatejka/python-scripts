@@ -6,12 +6,14 @@ from datetime import datetime
 from google.cloud import bigquery
 import gspread
 from google.oauth2 import service_account
+from statistics import median
 
 # --- KONFIGURACE ---
 API_KEY = os.environ.get('PAGESPEED_API_KEY')
 BIGQUERY_TABLE_ID = os.environ.get('BIGQUERY_TABLE_ID')
 SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')  # ID spreadsheetu
-SHEET_NAME = os.environ.get('SHEET_NAME', 'Sheet1')  # Název listu, default 'Sheet1'
+SHEET_NAME = os.environ.get('SHEET_NAME', 'PageSpeedLabData-Config')  # Název listu, default 'PageSpeedLabData-Config'
+POCET_OPAKOVANI = 3  # Počet opakování testu pro každou URL
 # ---------------------
 
 def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
@@ -76,7 +78,6 @@ def fetch_urls_from_spreadsheet(spreadsheet_id, sheet_name):
 
 def check_pagespeed(url_to_check, strategy):
     """Spustí PageSpeed test a vrací metriky."""
-    print(f"\n⚙️  Testuji: {url_to_check} (Strategie: {strategy})")
     
     api_endpoint = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
     params = {
@@ -101,8 +102,6 @@ def check_pagespeed(url_to_check, strategy):
         lcp_val = audits.get('largest-contentful-paint', {}).get('numericValue', 0) / 1000.0
         cls_val = audits.get('cumulative-layout-shift', {}).get('numericValue', 0)
         score_val = int(data['lighthouseResult']['categories']['performance']['score'] * 100)
-
-        print(f"✅ Výsledky ({strategy}): Skóre: {score_val} | FCP: {fcp_val:.2f}s | LCP: {lcp_val:.2f}s | CLS: {cls_val}")
         
         return {
             "fcp": fcp_val,
@@ -118,6 +117,58 @@ def check_pagespeed(url_to_check, strategy):
         print(f"❌ Neočekávaná chyba: {e}")
     
     return None
+
+def test_url_multiple_times(url, strategy, pocet_opakovani=3):
+    """
+    Otestuje URL několikrát a vrátí medián z výsledků.
+    """
+    print(f"\n⚙️  Testuji: {url} (Strategie: {strategy})")
+    print(f"   Počet měření: {pocet_opakovani}x")
+    
+    all_measurements = []
+    
+    for i in range(pocet_opakovani):
+        print(f"   📊 Měření {i+1}/{pocet_opakovani}...", end=" ")
+        
+        metrics = check_pagespeed(url, strategy)
+        
+        if metrics == 'STOP':
+            return 'STOP'
+        
+        if metrics:
+            all_measurements.append(metrics)
+            print(f"Skóre: {metrics['score']} | FCP: {metrics['fcp']:.2f}s | LCP: {metrics['lcp']:.2f}s")
+        else:
+            print("Selhalo")
+        
+        # Pauza mezi opakováními (kromě posledního)
+        if i < pocet_opakovani - 1:
+            time.sleep(0.5)
+    
+    # Pokud nemáme žádná úspěšná měření
+    if not all_measurements:
+        print("   ❌ Všechna měření selhala")
+        return None
+    
+    # Vypočítáme medián z každé metriky
+    fcp_values = [m['fcp'] for m in all_measurements]
+    lcp_values = [m['lcp'] for m in all_measurements]
+    cls_values = [m['cls'] for m in all_measurements]
+    score_values = [m['score'] for m in all_measurements]
+    
+    median_metrics = {
+        'fcp': median(fcp_values),
+        'lcp': median(lcp_values),
+        'cls': median(cls_values),
+        'score': int(median(score_values))
+    }
+    
+    print(f"   ✅ MEDIÁN: Skóre: {median_metrics['score']} | "
+          f"FCP: {median_metrics['fcp']:.2f}s | "
+          f"LCP: {median_metrics['lcp']:.2f}s | "
+          f"CLS: {median_metrics['cls']:.4f}")
+    
+    return median_metrics
 
 def insert_to_bigquery(client, rows_to_insert):
     """Vloží připravené řádky do BigQuery."""
@@ -158,48 +209,53 @@ def main():
     
     print(f"\n{'='*60}")
     print(f"--- Zahajuji testování {len(url_data)} URL ---")
+    print(f"--- Každá URL bude testována {POCET_OPAKOVANI}x pro každou strategii ---")
     print(f"{'='*60}")
     
-    total_calls = len(url_data) * len(strategies_to_test)
-    current_call = 0
+    total_tests = len(url_data) * len(strategies_to_test)
+    current_test = 0
 
     for data in url_data:
         url = data['url']
         category = data['category']
         
         for strategy in strategies_to_test:
-            current_call += 1
-            print(f"\n[{current_call}/{total_calls}]", end=" ")
+            current_test += 1
+            print(f"\n{'='*60}")
+            print(f"[Test {current_test}/{total_tests}] URL: {url[:50]}... | Kategorie: {category}")
+            print(f"{'='*60}")
             
-            metrics = check_pagespeed(url, strategy)
+            # Otestujeme URL 3x a získáme medián
+            median_metrics = test_url_multiple_times(url, strategy, POCET_OPAKOVANI)
             
-            if metrics == 'STOP':
+            if median_metrics == 'STOP':
                 print("\n!!! ZASTAVENO: API vrátilo chybu 429. Ukončuji skript.")
                 break
             
-            if metrics:
+            if median_metrics:
                 now = datetime.utcnow()
                 row = {
                     "DATE": now.strftime("%Y-%m-%d"),
                     "TIMESTAMP": now.isoformat() + "Z",
                     "URL": url,
-                    "CATEGORY": category,  # ← PŘIDÁNA KATEGORIE
+                    "CATEGORY": category,
                     "DEVICE_CATEGORY": strategy,
-                    "FCP": metrics["fcp"],
-                    "LCP": metrics["lcp"],
-                    "CLS": metrics["cls"],
-                    "OVERALL_SCORE": metrics["score"]
+                    "FCP": median_metrics["fcp"],
+                    "LCP": median_metrics["lcp"],
+                    "CLS": median_metrics["cls"],
+                    "OVERALL_SCORE": median_metrics["score"]
                 }
                 all_results_to_insert.append(row)
-
-            if current_call < total_calls and metrics != 'STOP':
-                time.sleep(0.5)
+            
+            # Pauza mezi testy různých URL/strategií
+            if current_test < total_tests:
+                time.sleep(1)
         
-        if metrics == 'STOP':
+        if median_metrics == 'STOP':
             break
 
     print(f"\n{'='*60}")
-    print(f"📊 Celkem získáno {len(all_results_to_insert)} úspěšných měření")
+    print(f"📊 Celkem získáno {len(all_results_to_insert)} úspěšných měření (mediánů)")
     print(f"{'='*60}")
 
     insert_to_bigquery(bq_client, all_results_to_insert)

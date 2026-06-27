@@ -47,7 +47,7 @@ jobs:
           IG_USERNAME: ${{ secrets.IG_USERNAME }}  # přidat v Settings → Secrets
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}  # přidat v Settings → Secrets
           IG_COLLECTION: ${{ github.event.inputs.collection || '' }}
-        run: python instagramDownloader.py
+        run: python instagram/instagramDownloader.py
 
       - name: Upload ZIP archivu jako artefakt
         uses: actions/upload-artifact@v4

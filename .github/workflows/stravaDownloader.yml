@@ -33,7 +33,7 @@ jobs:
           STRAVA_REFRESH_TOKEN:    ${{ secrets.STRAVA_REFRESH_TOKEN }}
           STRAVA_TOKEN_FILE:       .strava_token.json
           GOOGLE_CREDENTIALS_FILE: google_credentials.json
-        run: python stravaDownloader.py
+        run: python strava/stravaDownloader.py
 
       - name: Uložení obnoveného tokenu jako artefakt
         if: always()

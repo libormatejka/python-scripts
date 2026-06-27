@@ -38,4 +38,4 @@ jobs:
           SHEET_NAME: ${{ vars.SHEET_NAME }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: |
-          python pagespeedInsightsAPI.py
+          python pagespeed/pagespeedInsightsAPI.py

@@ -1,0 +1,45 @@
+name: Strava → Google Sheets (denní sync)
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # každý den v 6:00 ráno UTC (= 7:00 nebo 8:00 CZ dle letního času)
+  workflow_dispatch:      # možnost spustit ručně z GitHub UI
+
+jobs:
+  sync-strava:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout kódu
+        uses: actions/checkout@v4
+
+      - name: Nastavení Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalace závislostí
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests gspread google-auth
+
+      - name: Zápis Google credentials do souboru
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > google_credentials.json
+
+      - name: Spuštění Strava downloaderu
+        env:
+          STRAVA_CLIENT_ID:        ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET:    ${{ secrets.STRAVA_CLIENT_SECRET }}
+          STRAVA_REFRESH_TOKEN:    ${{ secrets.STRAVA_REFRESH_TOKEN }}
+          STRAVA_TOKEN_FILE:       .strava_token.json
+          GOOGLE_CREDENTIALS_FILE: google_credentials.json
+        run: python stravaDownloader.py
+
+      - name: Uložení obnoveného tokenu jako artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strava-token-${{ github.run_id }}
+          path: .strava_token.json
+          if-no-files-found: ignore
+          retention-days: 1

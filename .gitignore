@@ -1,0 +1,6 @@
+google_credentials.json
+.strava_token.json
+.env
+get-pip.py
+__pycache__/
+*.pyc

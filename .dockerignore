@@ -1,0 +1,9 @@
+.git
+.github
+.env
+.strava_token.json
+google_credentials.json
+get-pip.py
+__pycache__
+*.pyc
+*.md

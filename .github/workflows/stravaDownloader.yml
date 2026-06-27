@@ -2,7 +2,10 @@ name: Strava → Google Sheets (denní sync)
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # každý den v 6:00 ráno UTC (= 7:00 nebo 8:00 CZ dle letního času)
+    - cron: '0 6 * * *'   # 6:00 UTC  = 7:00 / 8:00 CZ
+    - cron: '0 10 * * *'  # 10:00 UTC = 11:00 / 12:00 CZ
+    - cron: '0 14 * * *'  # 14:00 UTC = 15:00 / 16:00 CZ
+    - cron: '0 18 * * *'  # 18:00 UTC = 19:00 / 20:00 CZ
   workflow_dispatch:      # možnost spustit ručně z GitHub UI
 
 jobs:

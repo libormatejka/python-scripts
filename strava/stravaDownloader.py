@@ -179,16 +179,15 @@ def fetch_all_activities(token: dict) -> list[dict]:
         time.sleep(0.4)
     return activities
 
+def fetch_detail(token: dict, activity_id: int) -> dict:
+    return api_get(f"/activities/{activity_id}", token)
+
 # ── Transformace ──────────────────────────────────────────────────────────────
 
 def format_pace(moving_time_s: float | None, distance_m: float | None) -> str:
-    """Vrátí pace ve formátu mm:ss /km."""
     if not moving_time_s or not distance_m or distance_m == 0:
         return ""
-    pace_s = moving_time_s / (distance_m / 1000)
-    minutes = int(pace_s // 60)
-    seconds = int(pace_s % 60)
-    return f"{minutes}:{seconds:02d}"
+    return round(moving_time_s / (distance_m / 1000))
 
 def format_moving_time(seconds: int | None) -> str:
     """Vrátí moving_time ve formátu hh:mm:ss."""
@@ -283,16 +282,21 @@ def main():
     existing_ids = get_existing_ids(worksheet)
     print(f"Existující záznamy v sheetu: {len(existing_ids)}")
 
-    new_rows = []
-    for act in activities:
-        if str(act.get("id", "")) not in existing_ids:
-            new_rows.append(activity_to_row(act))
+    new_activities = [act for act in activities if str(act.get("id", "")) not in existing_ids]
 
-    if not new_rows:
+    if not new_activities:
         print("Žádné nové aktivity k přidání.")
     else:
+        print(f"Stahuji detaily pro {len(new_activities)} nových aktivit (calories)...")
+        new_rows = []
+        for i, act in enumerate(new_activities, 1):
+            detail = fetch_detail(token, act["id"])
+            new_rows.append(activity_to_row(detail))
+            if i % 10 == 0:
+                print(f"  {i}/{len(new_activities)}")
+            time.sleep(0.3)
+
         print(f"Přidávám {len(new_rows)} nových aktivit...")
-        # Přidáváme po dávkách 500 kvůli limitům API
         chunk = 500
         for i in range(0, len(new_rows), chunk):
             append_rows(worksheet, new_rows[i:i + chunk])

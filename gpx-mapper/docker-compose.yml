@@ -1,0 +1,7 @@
+services:
+  gpx-mapper:
+    build: .
+    volumes:
+      - ./maps:/app/maps
+      - ./output:/app/output
+    command: -o output/map.png

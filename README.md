@@ -8,6 +8,7 @@ Každý skript běží automaticky přes GitHub Actions.
 | [strava/](strava/) | Stahuje aktivity ze Strava → Google Sheets | každý den 6:00 UTC |
 | [instagram/](instagram/) | Stahuje obrázky z Instagramu → ZIP | každý den 4:00 UTC |
 | [pagespeed/](pagespeed/) | PageSpeed testy → BigQuery + Google Sheets | každý den 3:00 UTC |
+| [gpx-mapper/](gpx-mapper/) | Heatmapa GPX tras → PNG | manuálně (Docker) |
 
 ---
 

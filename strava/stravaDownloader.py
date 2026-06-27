@@ -287,20 +287,27 @@ def main():
     if not new_activities:
         print("Žádné nové aktivity k přidání.")
     else:
-        print(f"Stahuji detaily pro {len(new_activities)} nových aktivit (calories)...")
-        new_rows = []
-        for i, act in enumerate(new_activities, 1):
-            detail = fetch_detail(token, act["id"])
-            new_rows.append(activity_to_row(detail))
-            if i % 10 == 0:
-                print(f"  {i}/{len(new_activities)}")
-            time.sleep(0.3)
+        # Detail (s calories) stahujeme jen při malém počtu nových aktivit.
+        # Při hromadném importu by to trvalo hodiny kvůli rate limitu.
+        DETAIL_THRESHOLD = 20
+        if len(new_activities) <= DETAIL_THRESHOLD:
+            print(f"Stahuji detaily pro {len(new_activities)} nových aktivit (calories)...")
+            enriched = []
+            for i, act in enumerate(new_activities, 1):
+                detail = fetch_detail(token, act["id"])
+                enriched.append(activity_to_row(detail))
+                if i % 10 == 0:
+                    print(f"  {i}/{len(new_activities)}")
+                time.sleep(0.3)
+        else:
+            print(f"Hromadný import ({len(new_activities)} aktivit) — calories nebudou vyplněny.")
+            enriched = [activity_to_row(act) for act in new_activities]
 
-        print(f"Přidávám {len(new_rows)} nových aktivit...")
+        print(f"Přidávám {len(enriched)} nových aktivit...")
         chunk = 500
-        for i in range(0, len(new_rows), chunk):
-            append_rows(worksheet, new_rows[i:i + chunk])
-        print(f"Hotovo! Přidáno {len(new_rows)} řádků do záložky '{SHEET_NAME}'.")
+        for i in range(0, len(enriched), chunk):
+            append_rows(worksheet, enriched[i:i + chunk])
+        print(f"Hotovo! Přidáno {len(enriched)} řádků do záložky '{SHEET_NAME}'.")
 
 if __name__ == "__main__":
     main()

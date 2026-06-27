@@ -60,24 +60,32 @@ def fetch_tile(args):
         return tx, ty, Image.new("RGB", (TILE_SIZE, TILE_SIZE), (20, 20, 20))
 
 
-def build_background(zoom, tx_min, ty_min, tx_max, ty_max):
-    cols = tx_max - tx_min + 1
-    rows = ty_max - ty_min + 1
-    bg = Image.new("RGB", (cols * TILE_SIZE, rows * TILE_SIZE))
+def build_background(zoom, origin_tx, origin_ty, width, height):
+    """Download only tiles visible in the output (center-based, not bbox-based)."""
+    tx_min = int(origin_tx)
+    ty_min = int(origin_ty)
+    tx_max = int(origin_tx + width / TILE_SIZE) + 1
+    ty_max = int(origin_ty + height / TILE_SIZE) + 1
 
     jobs = [(tx, ty, zoom) for ty in range(ty_min, ty_max + 1) for tx in range(tx_min, tx_max + 1)]
     total = len(jobs)
     print(f"  Downloading {total} map tiles...")
 
+    canvas = Image.new("RGB", ((tx_max - tx_min + 1) * TILE_SIZE, (ty_max - ty_min + 1) * TILE_SIZE))
+
     with ThreadPoolExecutor(max_workers=8) as ex:
         for i, (tx, ty, tile) in enumerate(ex.map(fetch_tile, jobs), 1):
             px = (tx - tx_min) * TILE_SIZE
             py = (ty - ty_min) * TILE_SIZE
-            bg.paste(tile, (px, py))
+            canvas.paste(tile, (px, py))
             print(f"  Tiles: {i}/{total}", end="\r")
 
     print()
-    return bg
+
+    # Crop to exact output size aligned to fractional tile origin
+    offset_x = int((origin_tx - tx_min) * TILE_SIZE)
+    offset_y = int((origin_ty - ty_min) * TILE_SIZE)
+    return canvas.crop((offset_x, offset_y, offset_x + width, offset_y + height))
 
 
 # ── GPX parsing ────────────────────────────────────────────────────────────────
@@ -176,6 +184,7 @@ def main():
     parser.add_argument("--color", choices=["red", "cyan", "pink"], default=None,
                         help="Override color for all tracks")
     parser.add_argument("--zoom", type=int, help="Force zoom level")
+    parser.add_argument("--min-zoom", type=int, default=12, help="Minimum auto-zoom level (default: 12)")
     args = parser.parse_args()
 
     # Resolve input files — expand directories, default to ./maps/
@@ -222,22 +231,27 @@ def main():
     if args.zoom:
         zoom = args.zoom
     else:
+        # Počítej span jen z bodů blízkých mediánu (ignoruj outliers)
+        lat_p5, lat_p95 = np.percentile(all_lats, [5, 95])
+        lng_p5, lng_p95 = np.percentile(all_lngs, [5, 95])
         for zoom in range(18, 1, -1):
-            span_x = (lng_to_tx(max_lng, zoom) - lng_to_tx(min_lng, zoom)) * TILE_SIZE
-            span_y = (lat_to_ty(min_lat, zoom) - lat_to_ty(max_lat, zoom)) * TILE_SIZE
+            span_x = (lng_to_tx(lng_p95, zoom) - lng_to_tx(lng_p5, zoom)) * TILE_SIZE
+            span_y = (lat_to_ty(lat_p5, zoom) - lat_to_ty(lat_p95, zoom)) * TILE_SIZE
             if span_x <= args.width - args.padding * 2 and span_y <= args.height - args.padding * 2:
                 break
+        zoom = max(zoom, args.min_zoom)
 
     print(f"\nUsing zoom level {zoom}")
 
-    tx_min = int(lng_to_tx(min_lng, zoom))
-    tx_max = int(lng_to_tx(max_lng, zoom))
-    ty_min = int(lat_to_ty(max_lat, zoom))
-    ty_max = int(lat_to_ty(min_lat, zoom))
+    # Median center — robustní vůči outlier GPX souborům z jiných měst
+    center_lat = float(np.median(all_lats))
+    center_lng = float(np.median(all_lngs))
+    origin_tx = lng_to_tx(center_lng, zoom) - args.width / (2 * TILE_SIZE)
+    origin_ty = lat_to_ty(center_lat, zoom) - args.height / (2 * TILE_SIZE)
 
-    # Build background
-    bg = build_background(zoom, tx_min, ty_min, tx_max, ty_max)
-    W, H = bg.size
+    # Build background (exactly width×height)
+    bg = build_background(zoom, origin_tx, origin_ty, args.width, args.height)
+    W, H = bg.size  # == args.width, args.height
 
     # Accumulator per color channel
     accumulators = {}
@@ -247,10 +261,9 @@ def main():
         if color not in accumulators:
             accumulators[color] = np.zeros((H, W), dtype=np.float32)
 
-        px_points = [point_to_px(lat, lng, zoom, tx_min, ty_min) for lat, lng in points]
+        px_points = [point_to_px(lat, lng, zoom, origin_tx, origin_ty) for lat, lng in points]
         px_ints = [(int(x), int(y)) for x, y in px_points]
 
-        # Draw on temp image, accumulate
         temp = Image.new("L", (W, H), 0)
         draw = ImageDraw.Draw(temp)
         if len(px_ints) >= 2:
@@ -265,18 +278,15 @@ def main():
     result = bg.convert("RGBA")
 
     for color, acc in accumulators.items():
-        # Log scale so popular routes pop without drowning rare ones
         acc = np.log1p(acc)
         if acc.max() > 0:
             acc = acc / acc.max()
 
         heatmap = colorize(acc, color)
 
-        # Optional glow: blur slightly before compositing
         if args.blur > 0:
             heatmap = heatmap.filter(ImageFilter.GaussianBlur(radius=args.blur))
 
-        # Alpha mask: non-black pixels get composited
         alpha = (acc * 255).clip(0, 255).astype(np.uint8)
         if args.blur > 0:
             alpha_img = Image.fromarray(alpha, "L").filter(ImageFilter.GaussianBlur(radius=args.blur))
@@ -284,23 +294,6 @@ def main():
             alpha_img = Image.fromarray(alpha, "L")
 
         result.paste(heatmap, (0, 0), alpha_img)
-
-    # Crop to content + padding
-    cx_min = int(lng_to_tx(min_lng, zoom) * TILE_SIZE - tx_min * TILE_SIZE) - args.padding
-    cx_max = int(lng_to_tx(max_lng, zoom) * TILE_SIZE - tx_min * TILE_SIZE) + args.padding
-    cy_min = int(lat_to_ty(max_lat, zoom) * TILE_SIZE - ty_min * TILE_SIZE) - args.padding
-    cy_max = int(lat_to_ty(min_lat, zoom) * TILE_SIZE - ty_min * TILE_SIZE) + args.padding
-
-    cx_min = max(0, cx_min)
-    cy_min = max(0, cy_min)
-    cx_max = min(W, cx_max)
-    cy_max = min(H, cy_max)
-
-    result = result.crop((cx_min, cy_min, cx_max, cy_max))
-
-    # Resize to desired output dimensions if needed
-    if result.width > args.width or result.height > args.height:
-        result.thumbnail((args.width, args.height), Image.LANCZOS)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     result.convert("RGB").save(args.output)

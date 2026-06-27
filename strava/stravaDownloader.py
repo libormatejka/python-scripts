@@ -202,45 +202,27 @@ def fetch_detail(token: dict, activity_id: int) -> dict:
 
 # ── Transformace ──────────────────────────────────────────────────────────────
 
-def format_pace(moving_time_s: float | None, distance_m: float | None) -> str:
-    if not moving_time_s or not distance_m or distance_m == 0:
-        return ""
-    return round(moving_time_s / (distance_m / 1000))
-
-def format_moving_time(seconds: int | None) -> str:
-    if seconds is None:
-        return ""
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h}:{m:02d}:{s:02d}"
-
 def activity_to_row(act: dict) -> list:
-    distance  = act.get("distance")
-    moving    = act.get("moving_time")
-    avg_speed = act.get("average_speed")
-    max_speed = act.get("max_speed")
-    raw_date  = act.get("start_date_local", "")
-
+    raw_date = act.get("start_date_local", "")
     return [
         act.get("id", ""),
         raw_date[:10] if raw_date else "",
         act.get("name", ""),
         act.get("sport_type") or act.get("type", ""),
-        round(distance, 1) if distance is not None else "",
+        act.get("distance", ""),
         act.get("kudos_count", ""),
         act.get("elev_low", ""),
         act.get("elev_high", ""),
         act.get("average_heartrate", ""),
         act.get("max_heartrate", ""),
-        format_moving_time(moving),
+        act.get("moving_time", ""),
         act.get("elapsed_time", ""),
         act.get("calories", ""),
         act.get("elev_high", ""),
         act.get("total_elevation_gain", ""),
-        format_pace(moving, distance),
-        round(avg_speed * 3.6, 2) if avg_speed is not None else "",
-        round(max_speed * 3.6, 2) if max_speed is not None else "",
+        act.get("average_cadence", ""),
+        act.get("average_speed", ""),
+        act.get("max_speed", ""),
         act.get("workout_type", ""),
     ]
 

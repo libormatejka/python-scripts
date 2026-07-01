@@ -69,11 +69,18 @@ def refresh_token(token: dict) -> dict:
         "grant_type":    "refresh_token",
         "refresh_token": token["refresh_token"],
     })
+    if resp.status_code == 401:
+        raise RuntimeError(
+            "401 Unauthorized při obnově tokenu — refresh token je neplatný nebo revokovaný.\n"
+            "Vygeneruj nový refresh token a aktualizuj GitHub secret STRAVA_REFRESH_TOKEN.\n"
+            "Návod: https://www.strava.com/settings/api"
+        )
     resp.raise_for_status()
     new_token = resp.json()
     save_token(new_token)
     expires = datetime.fromtimestamp(new_token["expires_at"], tz=timezone.utc).strftime("%H:%M:%S UTC")
-    log(f"Token obnoven, platí do {expires}.")
+    scope = new_token.get("scope", "není v odpovědi")
+    log(f"Token obnoven, platí do {expires}. Scope: {scope}")
     return new_token
 
 def get_valid_token() -> dict:
@@ -176,6 +183,12 @@ def api_get(endpoint: str, token: dict, params: dict = None) -> dict | list:
         time.sleep(wait)
         log("Rate limit vyprsel, pokracuji...")
         return api_get(endpoint, token, params)
+    if resp.status_code == 403:
+        raise RuntimeError(
+            f"403 Forbidden na {endpoint}\n"
+            f"Strava odpověď: {resp.text}\n"
+            "Scope tokenu není dostatečný nebo app nemá přístup k aktivitám."
+        )
     resp.raise_for_status()
     return resp.json()
 
